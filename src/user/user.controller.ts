@@ -7,7 +7,6 @@ import {
   UseGuards,
   ParseIntPipe,
   HttpCode,
-  Patch,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './user.dto';
@@ -37,7 +36,7 @@ export class UserController {
     return this.userService.findOne(id);
   }
 
-  @Patch(':userId/borrow/:bookId')
+  @Post(':userId/borrow/:bookId')
   @HttpCode(200)
   borrowBook(
     @Param('userId', ParseIntPipe) userId: number,
@@ -46,7 +45,7 @@ export class UserController {
     return this.userService.borrowBook(userId, bookId);
   }
 
-  @Patch(':userId/return/:bookId')
+  @Post(':userId/return/:bookId')
   @HttpCode(200)
   returnBook(
     @Param('userId', ParseIntPipe) userId: number,

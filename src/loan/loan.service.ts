@@ -85,7 +85,7 @@ export class LoanService {
   }
 
   private async updateBookAverageRating(bookId: number) {
-    const book = await this.bookService.findOne(bookId, true);
+    const book = await this.bookService.findOne(bookId);
     const loans = await this.loanRepository.find({
       where: { book: { id: Number(bookId) }, returnedAt: Not(IsNull()) },
       select: ['score'],

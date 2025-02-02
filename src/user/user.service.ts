@@ -45,7 +45,7 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    const book = await this.bookService.findOne(bookId, true);
+    const book = await this.bookService.findOne(bookId);
 
     if (!book) {
       throw new NotFoundException('Book not found');

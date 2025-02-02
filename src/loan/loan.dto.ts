@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   Min,
   Max,
+  IsNumber,
 } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
 
@@ -23,7 +24,7 @@ export class CreateLoanDto {
 }
 
 export class ReturnBookDto {
-  @IsInt()
+  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
   @IsNotEmpty()
   @Min(0)
   @Max(10)

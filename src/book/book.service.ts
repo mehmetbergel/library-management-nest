@@ -29,10 +29,10 @@ export class BookService {
     return this.bookRepository.find();
   }
 
-  public async findOne(id: number, loadRelations = false): Promise<Book> {
+  public async findOne(id: number): Promise<Book> {
     const book = await this.bookRepository.findOne({
       where: { id },
-      relations: loadRelations ? ['loans'] : [],
+      relations: ['loans'],
     });
 
     if (!book) {
@@ -40,18 +40,18 @@ export class BookService {
     }
 
     const scores = book.loans
-      .map((loan) => loan.score)
-      .filter((score) => score !== null && score !== undefined);
+      ?.map((loan) => loan.score)
+      ?.filter((score) => score !== null && score !== undefined);
 
-    const averageScore = scores.length
-      ? scores.reduce((a, b) => a + Number(b), 0) / scores.length
+    const averageScore = scores?.length
+      ? scores?.reduce((a, b) => a + Number(b), 0) / scores.length
       : -1;
 
     return {
       id: book.id,
       name: book.name,
       averageRating: averageScore,
-      loans: loadRelations ? book.loans : [],
+      loans: book.loans,
     };
   }
 

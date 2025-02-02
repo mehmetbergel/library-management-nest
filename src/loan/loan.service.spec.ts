@@ -2,40 +2,38 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { LoanService } from './loan.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Loan } from './loan.entity';
-import { Repository } from 'typeorm';
-import {
-  NotFoundException,
-  BadRequestException,
-  InternalServerErrorException,
-} from '@nestjs/common';
 import { User } from '../user/user.entity';
 import { Book } from '../book/book.entity';
-import { BookService } from '../book/book.service';
+import { Repository, DataSource, QueryRunner } from 'typeorm';
+import {
+  BadRequestException,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { ReturnBookDto } from './loan.dto';
 
 const mockLoanRepository = () => ({
   create: jest.fn(),
   save: jest.fn(),
   findOne: jest.fn(),
-  find: jest.fn(),
 });
 
-const mockBookService = () => ({
-  findOne: jest.fn(),
-  updateBook: jest.fn(),
+const mockDataSource = () => ({
+  createQueryRunner: jest.fn(),
 });
 
 describe('LoanService', () => {
   let service: LoanService;
   let loanRepository: jest.Mocked<Repository<Loan>>;
-  let bookService: jest.Mocked<BookService>;
+  let dataSource: jest.Mocked<DataSource>;
+  let queryRunner: jest.Mocked<QueryRunner>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LoanService,
         { provide: getRepositoryToken(Loan), useFactory: mockLoanRepository },
-        { provide: BookService, useFactory: mockBookService },
+        { provide: DataSource, useFactory: mockDataSource },
       ],
     }).compile();
 
@@ -43,119 +41,145 @@ describe('LoanService', () => {
     loanRepository = module.get<Repository<Loan>>(
       getRepositoryToken(Loan),
     ) as jest.Mocked<Repository<Loan>>;
-    bookService = module.get<BookService>(
-      BookService,
-    ) as jest.Mocked<BookService>;
+    dataSource = module.get<DataSource>(DataSource) as jest.Mocked<DataSource>;
+
+    queryRunner = {
+      connect: jest.fn(),
+      startTransaction: jest.fn(),
+      commitTransaction: jest.fn(),
+      rollbackTransaction: jest.fn(),
+      release: jest.fn(),
+      manager: {
+        save: jest.fn(),
+        findOne: jest.fn(),
+        find: jest.fn(),
+      },
+    } as unknown as jest.Mocked<QueryRunner>;
+
+    dataSource.createQueryRunner.mockReturnValue(queryRunner);
   });
 
-  it('should borrow a book if not already borrowed', async () => {
-    const user = { id: 1, name: 'Mehmet Bergel' } as User;
-    const book = { id: 1, name: 'Book Title' } as Book;
+  describe('borrowBook', () => {
+    it('should borrow a book if not already borrowed by the user', async () => {
+      const user = { id: 1 } as User;
+      const book = { id: 1 } as Book;
+      const loan = { user, book } as Loan;
 
-    loanRepository.findOne
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null);
-    loanRepository.create.mockReturnValue({ user, book } as Loan);
-    loanRepository.save.mockResolvedValue({ id: 1, user, book } as Loan);
+      loanRepository.findOne.mockResolvedValueOnce(null);
+      loanRepository.findOne.mockResolvedValueOnce(null);
+      loanRepository.create.mockReturnValue(loan);
+      loanRepository.save.mockResolvedValue(loan);
 
-    const result = await service.borrowBook(user, book);
-
-    expect(result).toEqual({ id: 1, user, book });
-    expect(loanRepository.create).toHaveBeenCalledWith({ user, book });
-    expect(loanRepository.save).toHaveBeenCalledWith({ user, book });
-  });
-
-  it('should throw BadRequestException if book is already borrowed by this user', async () => {
-    const user = { id: 1, name: 'Mehmet Bergel' } as User;
-    const book = { id: 1, name: 'Book Title' } as Book;
-
-    loanRepository.findOne.mockResolvedValueOnce({ id: 1, user, book } as Loan);
-
-    await expect(service.borrowBook(user, book)).rejects.toThrow(
-      BadRequestException,
-    );
-  });
-
-  it('should throw BadRequestException if book is already borrowed by another user', async () => {
-    const user = { id: 1, name: 'Mehmet Bergel' } as User;
-    const book = { id: 1, name: 'Book Title' } as Book;
-
-    loanRepository.findOne
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 2, user: { id: 2 }, book } as Loan);
-
-    await expect(service.borrowBook(user, book)).rejects.toThrow(
-      BadRequestException,
-    );
-  });
-
-  it('should return a book if loan exists', async () => {
-    const userId = 1;
-    const bookId = 1;
-    const returnBookDto: ReturnBookDto = { score: 5 };
-    const loan = {
-      id: 1,
-      user: { id: userId },
-      book: { id: bookId },
-      returnedAt: null,
-    } as Loan;
-
-    loanRepository.findOne.mockResolvedValue(loan);
-    loanRepository.save.mockResolvedValue({
-      ...loan,
-      returnedAt: new Date(),
-      score: 5,
-    } as Loan);
-    bookService.findOne.mockResolvedValue({
-      id: bookId,
-      name: 'Book Title',
-      averageRating: 0,
-      loans: [],
+      expect(await service.borrowBook(user, book)).toEqual(loan);
     });
-    loanRepository.find.mockResolvedValue([
-      {
-        id: 2,
-        user: { id: 2 },
-        book: { id: bookId },
-        borrowedAt: new Date(),
-        returnedAt: new Date(),
+
+    it('should throw BadRequestException if book is already borrowed by the user', async () => {
+      const user = { id: 1 } as User;
+      const book = { id: 1 } as Book;
+      const existingLoan = { id: 1 } as Loan;
+
+      loanRepository.findOne.mockResolvedValue(existingLoan);
+
+      await expect(service.borrowBook(user, book)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should throw BadRequestException if book is already borrowed by another user', async () => {
+      const user = { id: 1 } as User;
+      const book = { id: 1 } as Book;
+
+      loanRepository.findOne.mockResolvedValueOnce(null);
+      loanRepository.findOne.mockResolvedValueOnce({ id: 2 } as Loan);
+
+      await expect(service.borrowBook(user, book)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('returnBook', () => {
+    it('should return a book and update the rating', async () => {
+      const userId = 1;
+      const bookId = 1;
+      const returnBookDto: ReturnBookDto = { score: 5 };
+      const loan = { id: 1, returnedAt: null, score: null } as unknown as Loan;
+      const book = { id: bookId, averageRating: 0 } as Book;
+
+      loanRepository.findOne.mockResolvedValueOnce(loan);
+
+      (queryRunner.manager.findOne as jest.Mock).mockResolvedValueOnce(book);
+      (queryRunner.manager.save as jest.Mock).mockResolvedValueOnce(loan);
+      (queryRunner.manager.findOne as jest.Mock).mockResolvedValueOnce(book);
+      (queryRunner.manager.find as jest.Mock).mockResolvedValueOnce([
+        { score: 5 },
+        { score: 4 },
+      ]);
+      (queryRunner.manager.findOne as jest.Mock).mockResolvedValueOnce(book);
+
+      await expect(
+        service.returnBook(userId, bookId, returnBookDto),
+      ).resolves.toEqual({
+        ...loan,
+        returnedAt: expect.any(Date),
         score: 5,
-      } as Loan,
-    ]);
+      });
 
-    const result = await service.returnBook(userId, bookId, returnBookDto);
+      expect(queryRunner.manager.save).toHaveBeenCalledWith(
+        Loan,
+        expect.objectContaining({ score: 5 }),
+      );
+      expect(queryRunner.manager.save).toHaveBeenCalledWith(
+        Book,
+        expect.objectContaining({ averageRating: 4.5 }),
+      );
+      expect(queryRunner.commitTransaction).toHaveBeenCalled();
+    });
 
-    expect(result.returnedAt).toBeInstanceOf(Date);
-    expect(result.score).toBe(5);
-    expect(bookService.updateBook).toHaveBeenCalledWith(
-      expect.objectContaining({ averageRating: 5 }),
-    );
-  });
+    it('should throw NotFoundException if active loan is not found', async () => {
+      const userId = 1;
+      const bookId = 1;
+      const returnBookDto: ReturnBookDto = { score: 5 };
 
-  it('should throw NotFoundException if loan does not exist', async () => {
-    loanRepository.findOne.mockResolvedValue(null);
+      loanRepository.findOne.mockResolvedValue(null);
 
-    await expect(service.returnBook(1, 1, { score: 5 })).rejects.toThrow(
-      NotFoundException,
-    );
-  });
+      await expect(
+        service.returnBook(userId, bookId, returnBookDto),
+      ).rejects.toThrow(
+        new NotFoundException('Active loan not found for this user and book'),
+      );
+    });
 
-  it('should throw BadRequestException if book is already returned', async () => {
-    const loan = { id: 1, returnedAt: new Date() } as Loan;
-    loanRepository.findOne.mockResolvedValue(loan);
+    it('should throw BadRequestException if book is already returned', async () => {
+      const userId = 1;
+      const bookId = 1;
+      const returnBookDto: ReturnBookDto = { score: 5 };
+      const loan = { id: 1, returnedAt: new Date() } as Loan;
 
-    await expect(service.returnBook(1, 1, { score: 5 })).rejects.toThrow(
-      BadRequestException,
-    );
-  });
+      loanRepository.findOne.mockResolvedValue(loan);
 
-  it('should throw InternalServerErrorException if save fails during return', async () => {
-    const loan = { id: 1, returnedAt: null } as Loan;
-    loanRepository.findOne.mockResolvedValue(loan);
-    loanRepository.save.mockRejectedValue(new Error('Save failed'));
+      await expect(
+        service.returnBook(userId, bookId, returnBookDto),
+      ).rejects.toThrow(
+        new BadRequestException('Book has already been returned'),
+      );
+    });
 
-    await expect(service.returnBook(1, 1, { score: 5 })).rejects.toThrow(
-      InternalServerErrorException,
-    );
+    it('should rollback transaction on error', async () => {
+      const userId = 1;
+      const bookId = 1;
+      const returnBookDto: ReturnBookDto = { score: 5 };
+      const loan = { id: 1, returnedAt: null } as Loan;
+
+      loanRepository.findOne.mockResolvedValue(loan);
+      (queryRunner.manager.save as jest.Mock).mockRejectedValue(
+        new Error('Save failed'),
+      );
+
+      await expect(
+        service.returnBook(userId, bookId, returnBookDto),
+      ).rejects.toThrow(InternalServerErrorException);
+      expect(queryRunner.rollbackTransaction).toHaveBeenCalled();
+    });
   });
 });
